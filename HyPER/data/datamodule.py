@@ -67,6 +67,9 @@ class HyPERDataModule(LightningDataModule):
         self.index_range = None
 
     def setup(self, stage: str):
+        
+        # print("Setup called")
+        # input()
         self.train_data = None
         self.val_data   = None
         if self.train_set is not None:
@@ -80,6 +83,8 @@ class HyPERDataModule(LightningDataModule):
 
                 self.train_data, self.val_data = random_split(data, [1-self.percent_valid_samples, self.percent_valid_samples])
 
+                print(data.__dict__)
+                input()
             else:
                 if self.all_matched is True:
                     train_data = GraphDataset(path=self.train_set, configs=self.db_config, use_index_select=True)
