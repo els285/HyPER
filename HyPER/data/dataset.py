@@ -5,6 +5,7 @@ import torch
 import warnings
 
 import numpy as np
+from numpy.lib.recfunctions import structured_to_unstructured
 
 from torch import Tensor
 from torch_geometric.data import Data
@@ -115,9 +116,8 @@ class GraphDataset(torch.utils.data.Dataset):
                 if self.use_index_select:
                     warnings.warn("`IndexSelect` not found in `LABELS`. No index selection will be made.")
                     self.use_index_select = False
-
-
-    def get_node_feats(self, inputs_db, index):
+                    
+    def get_node_feats(inputs_db, index):
         r"""Get node features.
 
         Args:
@@ -126,11 +126,43 @@ class GraphDataset(torch.utils.data.Dataset):
 
         :rtype: :class:`torch.tensor`
         """
-        x = torch.concatenate(
-            [ torch.tensor(np.array(inputs_db[obj][index].tolist()),dtype=torch.float32) for obj in self.objects ],
-            dim=0
-        )
-        return x[x[:,-1]!=0]
+        
+        object_encoding = {"jet" : -99}
+        
+        Xlist =[]
+        
+        for obj in self.objects:
+            # Extract object node array and convert
+            x0 = torch.tensor(structured_to_unstructured(file['INPUTS'][obj][index]),dtype=torch.float32)
+            # Remove padded objects
+            non_padded_x = x0[x0[:,-1]!=0]
+            # Apply the object encoding and append
+            type_tensor  = object_encoding[obj]*torch.ones(len(non_padded_x)).reshape(-1,1)
+            Xlist.append(torch.cat((non_padded_x[:,:-1],type_tensor),-1))
+                
+        return torch.cat(Xlist,dim=0)
+
+    # def get_node_feats(self, inputs_db, index):
+    #     r"""Get node features.
+
+    #     Args:
+    #         inputs_db: `INPUTS` data group in the h5 file.
+    #         index (int): event index.
+
+    #     :rtype: :class:`torch.tensor`
+        
+    #     ETHAN COMMENTS:
+    #     In this function we need to add the object-type encoding
+        
+    #     """
+    #     x = torch.concatenate(
+    #         [ torch.tensor(structured_to_unstructured(inputs_db[obj][index]),dtype=torch.float32) for obj in self.objects ],
+    #         dim=0
+    #     )
+        
+    #     # The selection placed on this array removes the padded objects. 
+    #     # The last element of each node embedding is 1 if non-padded and 0 if padded
+    #     return x[x[:,-1]!=0]
 
     def get_edge_feats(self, x: Tensor) -> Tuple[Tensor,Tensor]:
         r"""Build a fully connected graph, and get edge feature and index tensors.
@@ -174,8 +206,10 @@ class GraphDataset(torch.utils.data.Dataset):
 
         :rtype: :class:`torch.tensor`
         """
-        ids = torch.tensor(np.array(labels_db['VertexID'][index]), dtype=torch.float32)
+        ids = torch.tensor(np.concatenate([file['LABELS'][object][index] for obj in self.objects],axis=0))
         return ids[ids!=-9].reshape(-1,1)
+        # ids = torch.tensor(np.array(labels_db['VertexID'][index]), dtype=torch.float32)
+        # return ids[ids!=-9].reshape(-1,1)
 
     def get_edge_labels(
         self,
@@ -245,6 +279,8 @@ class GraphDataset(torch.utils.data.Dataset):
             x = self.get_node_feats(file['INPUTS'], index)
             u = self.get_global_feats(file['INPUTS'], index)
             VertexID = self.get_VertexID(file['LABELS'], index)
+            
+        # print(VertexID)
 
         edge_attr, edge_index = self.get_edge_feats(x)
         edge_attr_t = self.get_edge_labels(edge_index, VertexID)
